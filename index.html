@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ujjstabilitás-mérő – élő giroszkóp</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;margin:0;background:#0b0d10;color:#e8eef6}
+    header{padding:16px 20px;border-bottom:1px solid #1b212b}
+    h1{font-size:18px;margin:0}
+    main{padding:16px 20px;display:grid;gap:16px;max-width:900px}
+    .card{background:#10151c;border:1px solid #1b212b;border-radius:14px;padding:14px}
+    .row{display:flex;flex-wrap:wrap;gap:12px}
+    .row>*{flex:1 1 220px}
+    button{background:#3b82f6;border:none;color:white;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
+    button.secondary{background:#263140}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .kpi{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
+    .bar{height:10px;background:#1b212b;border-radius:8px;overflow:hidden}
+    .bar>div{height:100%;background:#3b82f6;width:0%}
+    small{opacity:.75}
+    canvas{width:100%;height:200px;background:#0b0f14;border:1px solid #1b212b;border-radius:8px}
+    label{display:block;font-weight:600;margin-bottom:6px}
+    input[type=number]{width:100%;padding:8px;border-radius:8px;border:1px solid #263140;background:#0b0f14;color:#e8eef6}
+    .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+    .muted{opacity:.8}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#1b212b}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Ujjstabilitás-mérő – élő giroszkóp</h1>
+    <small>Rögzítsd a telefont a kézhátra/csuklóra. Csinálj „OK” csippentést hüvelyk + mutatóujjal, tartsd 5–10s izometriában. Ez az oldal élőben számolja a billegés (RMS) értéket.</small>
+  </header>
+  <main>
+    <div class="card">
+      <div class="row" style="align-items:center;gap:10px">
+        <button id="btnPerm">iOS engedély kérése</button>
+        <button id="btnStart">Indítás</button>
+        <button id="btnStop" class="secondary" disabled>Leállítás</button>
+        <span class="pill" id="status">Offline</span>
+      </div>
+      <div class="grid" style="margin-top:10px">
+        <div>
+          <label>Mintavétel (Hz)</label>
+          <input id="hz" type="number" value="60" min="20" max="200" />
+        </div>
+        <div>
+          <label>Ablak (s) RMS-hez</label>
+          <input id="win" type="number" value="1.0" step="0.1" min="0.2" max="5" />
+        </div>
+        <div>
+          <label>Próba idő (s)</label>
+          <input id="trialSec" type="number" value="10" min="3" max="60" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <div>
+          <div class="kpi">
+            <div>
+              <div style="font-weight:700">Gyro |ω| RMS</div>
+              <small>(rad/s, gördülő)</small>
+            </div>
+            <div class="bar"><div id="barRms"></div></div>
+            <div id="kpiRms" style="font-weight:700">0.000</div>
+          </div>
+        </div>
+        <div>
+          <div class="kpi">
+            <div>
+              <div style="font-weight:700">Gyorsulás |a| RMS</div>
+              <small>(m/s², gördülő)</small>
+            </div>
+            <div class="bar"><div id="barAcc"></div></div>
+            <div id="kpiAcc" style="font-weight:700">0.000</div>
+          </div>
+        </div>
+        <div>
+          <div class="kpi">
+            <div>
+              <div style="font-weight:700">Sway Path (szögút)</div>
+              <small>(fok, kumulált a próbán)</small>
+            </div>
+            <div class="bar"><div id="barPath"></div></div>
+            <div id="kpiPath" style="font-weight:700">0.0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label>Élő görbék</label>
+      <canvas id="chart"></canvas>
+      <small class="muted">A grafikon a |ω| és |a| utolsó ~10 másodpercét rajzolja.</small>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button id="btnMark">Próba indítása (3-2-1)</button>
+        <div id="trialInfo" class="pill">Nincs aktív próba</div>
+      </div>
+      <small class="muted">Tipp: minden próbán ugyanúgy tartsd az "OK" csippentést. Nézd a számokat, de próbálj lazán, azonos légzéssel maradni.</small>
+    </div>
+  </main>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const btnPerm = document.getElementById('btnPerm');
+    const btnMark = document.getElementById('btnMark');
+    const hzEl = document.getElementById('hz');
+    const winEl = document.getElementById('win');
+    const trialSecEl = document.getElementById('trialSec');
+
+    const kpiRms = document.getElementById('kpiRms');
+    const kpiAcc = document.getElementById('kpiAcc');
+    const kpiPath = document.getElementById('kpiPath');
+    const barRms = document.getElementById('barRms');
+    const barAcc = document.getElementById('barAcc');
+    const barPath = document.getElementById('barPath');
+    const trialInfo = document.getElementById('trialInfo');
+
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+
+    let running = false;
+    let lastTs = null;
+    let bufGyro = []; // magnitude buffer
+    let bufAcc = [];
+    let bufTime = [];
+    let pathDeg = 0; // cumulative degrees per trial
+    let trialOn = false; let trialEndAt = 0;
+
+    function requestIOSPermission(){
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+        DeviceMotionEvent.requestPermission().then(state=>{
+          alert('Engedély állapot: '+state);
+        }).catch(e=>alert(e?.message||e));
+      } else {
+        alert('iOS speciális engedély nem szükséges ezen az eszközön.');
+      }
+    }
+
+    btnPerm.onclick = requestIOSPermission;
+
+    function start(){
+      if(running) return;
+      running = true; statusEl.textContent = 'Online';
+      window.addEventListener('devicemotion', onMotion, {frequency: Number(hzEl.value)||60});
+      resizeCanvas();
+    }
+
+    function stop(){
+      if(!running) return;
+      running = false; statusEl.textContent = 'Offline';
+      window.removeEventListener('devicemotion', onMotion);
+      lastTs = null; bufGyro = []; bufAcc = []; bufTime = []; pathDeg = 0; trialOn=false;
+      render();
+      kpiRms.textContent = '0.000'; barRms.style.width = '0%';
+      kpiAcc.textContent = '0.000'; barAcc.style.width = '0%';
+      kpiPath.textContent = '0.0'; barPath.style.width = '0%';
+      trialInfo.textContent = 'Nincs aktív próba';
+    }
+
+    btnStart.onclick = start; btnStop.onclick = stop;
+
+    btnMark.onclick = async ()=>{
+      if(!running) return;
+      // simple countdown 3-2-1 then start trial
+      trialInfo.textContent = '3…'; await wait(700);
+      trialInfo.textContent = '2…'; await wait(700);
+      trialInfo.textContent = '1…'; await wait(700);
+      pathDeg = 0; trialOn = true; const sec = Number(trialSecEl.value)||10;
+      trialEndAt = performance.now()+sec*1000;
+      trialInfo.textContent = 'Próba fut ('+sec+'s)…';
+    };
+
+    function wait(ms){return new Promise(r=>setTimeout(r,ms));}
+
+    function onMotion(e){
+      const t = e.timeStamp || performance.now();
+      const dt = lastTs? (t - lastTs)/1000 : 0; lastTs = t;
+
+      // Some browsers provide rotationRate in deg/s, accelerations in m/s^2
+      const rr = e.rotationRate || {}; // alpha,beta,gamma deg/s
+      const gx = (rr.alpha||0) * Math.PI/180; // convert to rad/s
+      const gy = (rr.beta||0)  * Math.PI/180;
+      const gz = (rr.gamma||0) * Math.PI/180;
+      const gmag = Math.hypot(gx,gy,gz);
+
+      const ax = (e.acceleration && e.acceleration.x)??0;
+      const ay = (e.acceleration && e.acceleration.y)??0;
+      const az = (e.acceleration && e.acceleration.z)??0;
+      const amag = Math.hypot(ax,ay,az);
+
+      // cumulative angle path during trial
+      if(trialOn && dt>0){
+        pathDeg += (gmag * dt) * 180/Math.PI;
+        if (performance.now() >= trialEndAt){
+          trialOn = false;
+          trialInfo.textContent = 'Próba vége – Path: '+pathDeg.toFixed(1)+'°';
+        }
+      }
+
+      const now = performance.now()/1000;
+      bufGyro.push(gmag); bufAcc.push(amag); bufTime.push(now);
+
+      // keep ~10s history
+      const ten = 10; while(bufTime.length && now - bufTime[0] > ten){ bufTime.shift(); bufGyro.shift(); bufAcc.shift(); }
+
+      // rolling RMS over window
+      const win = Number(winEl.value)||1.0; let sumG=0,sumG2=0,sumA=0,sumA2=0,n=0;
+      for(let i=bufTime.length-1;i>=0;i--){
+        if(now - bufTime[i] > win) break;
+        const g=bufGyro[i], a=bufAcc[i];
+        sumG+=g; sumG2+=g*g; sumA+=a; sumA2+=a*a; n++;
+      }
+      const rmsG = n? Math.sqrt(sumG2/n) : 0;
+      const rmsA = n? Math.sqrt(sumA2/n) : 0;
+
+      // update KPIs
+      kpiRms.textContent = rmsG.toFixed(3);
+      kpiAcc.textContent = rmsA.toFixed(3);
+      kpiPath.textContent = pathDeg.toFixed(1);
+
+      // simple scaling for bars (tune max)
+      const gMax=1.0, aMax=1.5, pMax=60; // heuristic
+      barRms.style.width = Math.min(100, (rmsG/gMax)*100).toFixed(1)+'%';
+      barAcc.style.width = Math.min(100, (rmsA/aMax)*100).toFixed(1)+'%';
+      barPath.style.width = Math.min(100, (pathDeg/pMax)*100).toFixed(1)+'%';
+
+      render();
+    }
+
+    function resizeCanvas(){
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    function render(){
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      ctx.clearRect(0,0,w,h);
+      // axes
+      ctx.strokeStyle = '#263140'; ctx.lineWidth = 1;
+      for(let i=0;i<5;i++){ const y=i*h/4; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+      // plot |ω|
+      plotSeries(bufTime, bufGyro, '#8ab4ff');
+      // plot |a|
+      plotSeries(bufTime, bufAcc, '#34d399');
+      // legend
+      ctx.fillStyle = '#e8eef6'; ctx.font = '12px system-ui';
+      ctx.fillText('|ω| (rad/s)', 8, 18);
+      ctx.fillText('|a| (m/s²)', 100, 18);
+    }
+
+    function plotSeries(t, y, color){
+      if(t.length<2) return;
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      const t0 = t[0], tN = t[t.length-1], span = Math.max(1e-6, tN - t0);
+      let yMax = 0; for(const v of y) yMax = Math.max(yMax, v);
+      yMax = Math.max(0.5, yMax);
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+      for(let i=0;i<t.length;i++){
+        const x = ((t[i]-t0)/span)*w;
+        const yy = h - (y[i]/yMax)*h;
+        if(i===0) ctx.moveTo(x,yy); else ctx.lineTo(x,yy);
+      }
+      ctx.stroke();
+    }
+  </script>
+</body>
+</html>
