@@ -30,7 +30,7 @@
 <body>
   <header>
     <h1>Ujjstabilitás-mérő – élő giroszkóp</h1>
-    <small>Rögzítsd a telefont a kézhátra/csuklóra. Csinálj „OK” csippentést hüvelyk + mutatóujjal, tartsd 5–10s izometriában. Ez az oldal élőben számolja a billegés (RMS) értéket.</small>
+    <small>Rögzítsd a telefont a kézhátra/csuklóra. Csinálj „OK” csippentést hüvelyk + mutatóujjal, tartsd 5–10s izometriában. Ez az oldal élőben számolja a billegés (RMS) értéke[...]
   </header>
   <main>
     <div class="card">
@@ -102,7 +102,7 @@
         <button id="btnMark">Próba indítása (3-2-1)</button>
         <div id="trialInfo" class="pill">Nincs aktív próba</div>
       </div>
-      <small class="muted">Tipp: minden próbán ugyanúgy tartsd az "OK" csippentést. Nézd a számokat, de próbálj lazán, azonos légzéssel maradni.</small>
+      <small class="muted">Tipp: minden próbán ugyanúgy tartsd az \"OK\" csippentést. Nézd a számokat, de próbálj lazán, azonos légzéssel maradni.</small>
     </div>
   </main>
 
@@ -150,6 +150,8 @@
     function start(){
       if(running) return;
       running = true; statusEl.textContent = 'Online';
+      btnStart.disabled = true;         // Disable Start button when running
+      btnStop.disabled = false;         // Enable Stop button when running
       window.addEventListener('devicemotion', onMotion, {frequency: Number(hzEl.value)||60});
       resizeCanvas();
     }
@@ -157,6 +159,8 @@
     function stop(){
       if(!running) return;
       running = false; statusEl.textContent = 'Offline';
+      btnStop.disabled = true;          // Disable Stop button when stopped
+      btnStart.disabled = false;        // Enable Start button when stopped
       window.removeEventListener('devicemotion', onMotion);
       lastTs = null; bufGyro = []; bufAcc = []; bufTime = []; pathDeg = 0; trialOn=false;
       render();
