@@ -30,7 +30,7 @@
 <body>
   <header>
     <h1>Ujjstabilitás-mérő – élő giroszkóp</h1>
-    <small>Rögzítsd a telefont a kézhátra/csuklóra. Csinálj „OK” csippentést hüvelyk + mutatóujjal, tartsd 5–10s izometriában. Ez az oldal élőben számolja a billegés (RMS) értéke[...]
+    <small>Rögzítsd a telefont a kézhátra/csuklóra. Csinálj „OK” csippentést hüvelyk + mutatóujjal, tartsd 5–10s izometriában. Ez az oldal élőben számolja a billegés (RMS) értékét, stb.</small>
   </header>
   <main>
     <div class="card">
@@ -107,6 +107,21 @@
   </main>
 
   <script>
+    // --- Beep funkció ---
+    function beep(freq=440, duration=150, vol=0.2) {
+      const ctx = window.AudioContext ? new AudioContext() : new webkitAudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.value = vol;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration/1000);
+      osc.onended = () => ctx.close();
+    }
+
     const statusEl = document.getElementById('status');
     const btnStart = document.getElementById('btnStart');
     const btnStop = document.getElementById('btnStop');
@@ -154,6 +169,7 @@
       btnStop.disabled = false;         // Enable Stop button when running
       window.addEventListener('devicemotion', onMotion, {frequency: Number(hzEl.value)||60});
       resizeCanvas();
+      beep(880, 120, 0.3); // Induláskor beep
     }
 
     function stop(){
@@ -174,13 +190,16 @@
 
     btnMark.onclick = async ()=>{
       if(!running) return;
-      // simple countdown 3-2-1 then start trial
-      trialInfo.textContent = '3…'; await wait(700);
-      trialInfo.textContent = '2…'; await wait(700);
-      trialInfo.textContent = '1…'; await wait(700);
+      trialInfo.textContent = '3…'; beep(440, 180, 0.3);
+      await wait(700);
+      trialInfo.textContent = '2…'; beep(440, 180, 0.3);
+      await wait(700);
+      trialInfo.textContent = '1…'; beep(440, 180, 0.3);
+      await wait(700);
       pathDeg = 0; trialOn = true; const sec = Number(trialSecEl.value)||10;
       trialEndAt = performance.now()+sec*1000;
       trialInfo.textContent = 'Próba fut ('+sec+'s)…';
+      beep(660, 250, 0.4); // Próba induláskor más beep
     };
 
     function wait(ms){return new Promise(r=>setTimeout(r,ms));}
@@ -207,6 +226,7 @@
         if (performance.now() >= trialEndAt){
           trialOn = false;
           trialInfo.textContent = 'Próba vége – Path: '+pathDeg.toFixed(1)+'°';
+          beep(330, 500, 0.4); // Próba végén hosszabb, mélyebb beep
         }
       }
 
